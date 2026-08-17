@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fichaje</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #f5f5f7;
+    margin: 0;
+    padding: 24px 16px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 100vh;
+  }
+  .card {
+    background: white;
+    border-radius: 16px;
+    padding: 20px;
+    width: 100%;
+    max-width: 380px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    margin-bottom: 16px;
+  }
+  h1 { font-size: 18px; margin: 0 0 8px; }
+  p { color: #555; font-size: 13px; line-height: 1.5; }
+  #pinBox input {
+    width: 100%;
+    text-align: center;
+    font-size: 28px;
+    letter-spacing: 0.5em;
+    padding: 12px;
+    border: 1px solid #ddd;
+    border-radius: 10px;
+    margin-top: 8px;
+  }
+  button#btn {
+    width: 100%;
+    max-width: 380px;
+    padding: 32px;
+    font-size: 22px;
+    font-weight: 600;
+    color: white;
+    border: none;
+    border-radius: 16px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  }
+  button#btn.entrada { background: #16a34a; }
+  button#btn.salida { background: #2563eb; }
+  button#btn:disabled { opacity: 0.5; }
+  #resultado { display: none; text-align: center; }
+  #resultado .icono { font-size: 56px; }
+  #resHora { white-space: pre-line; }
+  #aviso { font-size: 12px; color: #777; }
+  #estado { font-size: 13px; color: #555; margin-bottom: 12px; text-align: center; }
+</style>
+</head>
+<body>
+  <div id="estado">Cargando…</div>
+
+  <div class="card" id="rgpd">
+    <h1>Antes de fichar</h1>
+    <p>
+      Al fichar se registra automáticamente la fecha, la hora y tu ubicación aproximada
+      en ese momento. Estos datos se usan únicamente para cumplir con la obligación legal
+      de registro horario en el servicio del hogar familiar. Solo tiene acceso tu empleador.
+    </p>
+    <button onclick="aceptarAviso()" style="width:100%;padding:12px;border-radius:10px;border:none;background:#111;color:white;">Entendido</button>
+  </div>
+
+  <div class="card" id="pinBox" style="display:none;">
+    <label style="font-size:13px;color:#555;">Primera vez en este dispositivo: introduce tu PIN</label>
+    <input type="tel" id="pin" maxlength="4" placeholder="••••" inputmode="numeric">
+  </div>
+
+  <button id="btn" onclick="fichar()" style="display:none;">Fichar</button>
+
+  <div class="card" id="resultado">
+    <div class="icono" id="resIcono"></div>
+    <h1 id="resTexto"></h1>
+    <p id="resHora"></p>
+  </div>
+
+  <p id="aviso" style="display:none;">Se guardará la hora exacta y tu ubicación aproximada.</p>
+
+<script>
+  // URL de tu Apps Script (backend). Si alguna vez creas una implementación nueva
+  // en vez de actualizar la existente, tendrás que cambiar esta línea.
+  var API_URL = "https://script.google.com/macros/s/AKfycbyLKpsB-4MLUTm79HN6eTMmyP3Z8tzs0p-SZ0DbQLXcYS50LkKJuPwWhOvJJHaoI7Th/exec";
+
+  var proximoTipo = 'ENTRADA';
+
+  function deviceToken() {
+    var t = localStorage.getItem('fichaje_device');
+    if (!t) {
+      t = Math.random().toString(36).slice(2) + Date.now();
+      localStorage.setItem('fichaje_device', t);
+    }
+    return t;
+  }
+
+  function aceptarAviso() {
+    document.getElementById('rgpd').style.display = 'none';
+    var esConocido = localStorage.getItem('fichaje_trusted') === '1';
+    if (!esConocido) document.getElementById('pinBox').style.display = 'block';
+    document.getElementById('btn').style.display = 'block';
+    document.getElementById('aviso').style.display = 'block';
+  }
+
+  function pintarBoton() {
+    var btn = document.getElementById('btn');
+    if (proximoTipo === 'ENTRADA') {
+      btn.className = 'entrada';
+      btn.innerText = 'Fichar ENTRADA';
+    } else {
+      btn.className = 'salida';
+      btn.innerText = 'Fichar SALIDA';
+    }
+  }
+
+  function cargarEstado() {
+    fetch(API_URL + '?action=estado')
+      .then(function(r) { return r.json(); })
+      .then(function(res) {
+        proximoTipo = res.proximoTipo;
+        pintarBoton();
+        var estadoDiv = document.getElementById('estado');
+        if (res.ultimo) {
+          estadoDiv.innerText = 'Último registro hoy: ' + (res.ultimo.tipo === 'ENTRADA' ? 'Entrada' : 'Salida') + ' a las ' + res.ultimo.hora;
+        } else {
+          estadoDiv.innerText = 'Sin fichajes registrados hoy todavía.';
+        }
+      })
+      .catch(function() {
+        document.getElementById('estado').innerText = 'No se pudo conectar. Revisa tu conexión e inténtalo de nuevo.';
+      });
+  }
+
+  function fichar() {
+    var btn = document.getElementById('btn');
+    var device = deviceToken();
+    var esConocido = localStorage.getItem('fichaje_trusted') === '1';
+    var pin = esConocido ? '' : document.getElementById('pin').value;
+
+    if (!esConocido && pin.length !== 4) {
+      alert('Introduce el PIN de 4 dígitos');
+      return;
+    }
+
+    btn.disabled = true;
+    btn.innerText = 'Obteniendo ubicación…';
+
+    function enviar(lat, lng) {
+      btn.innerText = 'Registrando…';
+      var url = API_URL + '?action=punch'
+        + '&pin=' + encodeURIComponent(pin)
+        + '&lat=' + (lat === null ? '' : lat)
+        + '&lng=' + (lng === null ? '' : lng)
+        + '&device=' + encodeURIComponent(device);
+
+      fetch(url)
+        .then(function(r) { return r.json(); })
+        .then(function(res) {
+          if (!res.ok) {
+            alert(res.error || 'Error al fichar');
+            btn.disabled = false;
+            pintarBoton();
+            return;
+          }
+          localStorage.setItem('fichaje_trusted', '1');
+          document.getElementById('pinBox').style.display = 'none';
+          document.getElementById('btn').style.display = 'none';
+          document.getElementById('aviso').style.display = 'none';
+          document.getElementById('resultado').style.display = 'block';
+          document.getElementById('resIcono').innerText = res.tipo === 'ENTRADA' ? '🟢' : '🔵';
+          document.getElementById('resTexto').innerText = res.tipo === 'ENTRADA' ? 'Entrada registrada' : 'Salida registrada';
+          document.getElementById('resHora').innerText = res.hora + (res.avisoUbicacion ? '\n' + res.avisoUbicacion : '');
+          setTimeout(function() { location.reload(); }, 3500);
+        })
+        .catch(function() {
+          alert('Error de red, inténtalo de nuevo');
+          btn.disabled = false;
+          pintarBoton();
+        });
+    }
+
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        function(pos) { enviar(pos.coords.latitude, pos.coords.longitude); },
+        function() { enviar(null, null); },
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+      );
+    } else {
+      enviar(null, null);
+    }
+  }
+
+  cargarEstado();
+</script>
+</body>
+</html>
