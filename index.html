@@ -177,7 +177,10 @@
           document.getElementById('resultado').style.display = 'block';
           document.getElementById('resIcono').innerText = res.tipo === 'ENTRADA' ? '🟢' : '🔵';
           document.getElementById('resTexto').innerText = res.tipo === 'ENTRADA' ? 'Entrada registrada' : 'Salida registrada';
-          document.getElementById('resHora').innerText = res.hora + (res.avisoUbicacion ? '\n' + res.avisoUbicacion : '');
+          var extra = '';
+          if (res.horas) extra += '\nHoras trabajadas: ' + res.horas;
+          if (res.avisoUbicacion) extra += '\n' + res.avisoUbicacion;
+          document.getElementById('resHora').innerText = res.hora + extra;
           setTimeout(function() { location.reload(); }, 3500);
         })
         .catch(function() {
